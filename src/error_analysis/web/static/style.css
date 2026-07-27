@@ -1,0 +1,244 @@
+/* Penpot error report analysis dashboard.
+   Utilitarian diagnostic tool: dense, quiet, monospace where content is code.
+   Single accent encodes analysis state (pending amber vs. analyzed green). */
+
+:root {
+  --bg: #fafaf8;
+  --surface: #ffffff;
+  --ink: #1f2328;
+  --muted: #6b7280;
+  --line: #e2e2dd;
+  --accent-pending: #b45309;
+  --accent-pending-bg: #fef3c7;
+  --accent-done: #15803d;
+  --accent-done-bg: #dcfce7;
+  --select-bg: #eef2f7;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+
+/* top bar */
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 1.5rem;
+  padding: 0.7rem 1.2rem;
+  border-bottom: 2px solid var(--ink);
+  background: var(--surface);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.window-control { display: flex; align-items: baseline; gap: 0.5rem; }
+.window-control label { color: var(--muted); }
+
+/* two-pane layout */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(420px, 46%) 1fr;
+  height: calc(100vh - 49px);
+}
+
+.pane { overflow: auto; }
+.pane-list { border-right: 1px solid var(--line); background: var(--surface); }
+.pane-detail { padding: 1rem 1.4rem 3rem; }
+
+.empty { color: var(--muted); padding: 1rem; }
+
+/* class table */
+
+.class-table { width: 100%; border-collapse: collapse; }
+
+.class-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  text-align: left;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.class-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.class-table tbody tr { cursor: pointer; }
+.class-table tbody tr:hover { background: var(--bg); }
+.class-table tbody tr.selected { background: var(--select-bg); }
+
+.col-id, .col-num { width: 4.5rem; text-align: right; }
+.class-table td.col-id, .class-table td.col-num { text-align: right; font-family: var(--mono); font-size: 0.85rem; }
+.col-date { width: 7rem; white-space: nowrap; }
+.col-status { width: 6.5rem; }
+
+.hint-cell {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  word-break: break-word;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border-radius: 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.badge.pending { color: var(--accent-pending); background: var(--accent-pending-bg); }
+.badge.done { color: var(--accent-done); background: var(--accent-done-bg); }
+
+/* detail pane */
+
+.detail-header h2 {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+  font-family: var(--mono);
+  word-break: break-word;
+}
+
+.detail-meta { color: var(--muted); font-size: 0.82rem; margin-bottom: 1rem; }
+.detail-meta span + span::before { content: " · "; }
+
+.detail-section { margin-top: 1.4rem; }
+
+.detail-section > h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.25rem;
+}
+
+pre.code-block {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ink);
+  padding: 0.7rem 0.9rem;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+/* insights */
+
+.insight {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent-done);
+  padding: 0.2rem 1rem 0.6rem;
+  margin-bottom: 0.9rem;
+}
+
+.insight-meta { font-size: 0.78rem; color: var(--muted); margin: 0.5rem 0 0; }
+.insight-meta a { color: inherit; }
+
+.insight-content h1, .insight-content h2, .insight-content h3 { font-size: 0.95rem; margin: 0.8rem 0 0.3rem; }
+.insight-content p, .insight-content ul { margin: 0.4rem 0; }
+.insight-content code { font-family: var(--mono); font-size: 0.82rem; background: var(--bg); padding: 0 0.2rem; }
+.insight-content pre { background: var(--bg); border: 1px solid var(--line); padding: 0.5rem; overflow: auto; }
+
+.no-insights {
+  color: var(--accent-pending);
+  background: var(--accent-pending-bg);
+  padding: 0.5rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+/* member list */
+
+.member-list { list-style: none; margin: 0; padding: 0; }
+
+.member-list li {
+  display: flex;
+  gap: 1rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px dotted var(--line);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.member-list a { color: var(--ink); text-decoration: none; }
+.member-list a:hover { text-decoration: underline; }
+.member-date { color: var(--muted); white-space: nowrap; }
+
+/* report overlay */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(31, 35, 40, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.overlay-box {
+  background: var(--surface);
+  border: 1px solid var(--ink);
+  width: min(1000px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.overlay-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.overlay-head h2 { margin: 0; font-size: 0.9rem; font-family: var(--mono); }
+
+.overlay-body { padding: 1rem; overflow: auto; }
+.overlay-body .detail-section:first-child { margin-top: 0; }
+
+button {
+  font: inherit;
+  background: var(--surface);
+  border: 1px solid var(--ink);
+  padding: 0.15rem 0.7rem;
+  cursor: pointer;
+}
+button:hover { background: var(--select-bg); }
+button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--accent-pending); outline-offset: 1px; }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; grid-template-rows: 45% 1fr; height: auto; min-height: calc(100vh - 49px); }
+  .pane-list { border-right: none; border-bottom: 1px solid var(--line); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .class-table tbody tr { transition: background-color 120ms ease; }
+}

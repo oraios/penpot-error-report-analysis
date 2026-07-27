@@ -1,0 +1,63 @@
+[project]
+name = "error-analysis"
+version = "0.1.0"
+description = "Systematic analysis of Penpot error reports: equivalence classing, LLM-driven insights, and a review dashboard."
+requires-python = ">=3.13"
+dependencies = [
+    "sqlalchemy>=2.0",
+    "flask>=3.0",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+    "mcp>=1.2",
+    "docstring-parser>=0.16",
+]
+
+[project.scripts]
+error-analysis-mcp = "error_analysis.mcp.server:main"
+error-analysis-web = "error_analysis.web.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/error_analysis"]
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.dependencies]
+python = "3.13.*"
+
+[tool.pixi.pypi-dependencies]
+error-analysis = { path = ".", editable = true }
+
+[tool.pixi.feature.dev.dependencies]
+ruff = "*"
+
+[tool.pixi.feature.dev.pypi-dependencies]
+ty = "*"
+
+[tool.pixi.environments]
+default = { features = ["dev"], solve-group = "default" }
+
+[tool.pixi.tasks]
+typecheck = "ty check src"
+lint = "ruff check src"
+fmt = "ruff format src"
+check = { depends-on = ["fmt", "lint", "typecheck"] }
+
+[tool.ruff]
+line-length = 140
+target-version = "py313"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ty.environment]
+python-version = "3.13"
+
+[tool.ty.src]
+exclude = ["build/"]

@@ -1,0 +1,11 @@
+# pixi environments
+.pixi/
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+# local data (analysis database and other runtime state)
+/data*
+.env

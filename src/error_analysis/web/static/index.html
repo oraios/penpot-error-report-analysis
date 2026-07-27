@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Penpot Error Report Analysis</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Penpot Error Report Analysis</h1>
+    <div class="window-control">
+      <label for="window-days">Window</label>
+      <select id="window-days">
+        <option value="7">7 days</option>
+        <option value="30" selected>30 days</option>
+        <option value="90">90 days</option>
+        <option value="365">365 days</option>
+      </select>
+      <span id="class-count" class="muted"></span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="pane pane-list" aria-label="Equivalence classes">
+      <table class="class-table">
+        <thead>
+          <tr>
+            <th class="col-id">#</th>
+            <th>Hint</th>
+            <th class="col-num">Reports</th>
+            <th class="col-date">Last seen</th>
+            <th class="col-status">Analysis</th>
+          </tr>
+        </thead>
+        <tbody id="class-rows"></tbody>
+      </table>
+      <p id="list-empty" class="empty hidden">No error reports in the selected window.</p>
+    </section>
+
+    <section class="pane pane-detail" id="detail-pane" aria-label="Class details">
+      <p class="empty">Select an equivalence class to inspect its signature, insights, and member reports.</p>
+    </section>
+  </main>
+
+  <div id="report-overlay" class="overlay hidden">
+    <div class="overlay-box">
+      <div class="overlay-head">
+        <h2 id="report-title">Report</h2>
+        <button id="report-close" type="button">Close</button>
+      </div>
+      <div id="report-body" class="overlay-body"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
