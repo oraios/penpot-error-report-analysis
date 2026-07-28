@@ -6,14 +6,19 @@
  */
 "use strict";
 
-/** Communicates with the JSON API of the analysis backend. */
+/**
+ * Communicates with the JSON API of the analysis backend.
+ *
+ * Endpoint URLs are relative to the document's directory, so the application works regardless of
+ * the path it is mounted at (e.g. behind a reverse proxy serving it under a sub-path).
+ */
 class ApiClient {
     /**
      * @param {number} days the time window in days
      * @returns {Promise<Array>} the class overviews
      */
     listClasses(days) {
-        return $.getJSON("/api/classes", { days: days });
+        return $.getJSON("api/classes", { days: days });
     }
 
     /**
@@ -21,7 +26,7 @@ class ApiClient {
      * @returns {Promise<Object>} the class details (class, insights, members)
      */
     getClass(classId) {
-        return $.getJSON(`/api/classes/${classId}`);
+        return $.getJSON(`api/classes/${classId}`);
     }
 
     /**
@@ -29,7 +34,7 @@ class ApiClient {
      * @returns {Promise<Object>} the report details
      */
     getReport(reportId) {
-        return $.getJSON(`/api/reports/${reportId}`);
+        return $.getJSON(`api/reports/${reportId}`);
     }
 }
 
