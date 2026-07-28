@@ -105,6 +105,10 @@ class SqlAnalysisRepository(AnalysisRepository):
     The schema is created on instantiation if it does not exist.
     """
 
+    _ID_QUERY_CHUNK_SIZE = 10_000
+    """the maximum number of identifiers per bulk lookup query, staying well below SQLite's
+    limit of 32766 bind variables per statement"""
+
     def __init__(self, engine_url: str) -> None:
         """
         :param engine_url: the SQLAlchemy engine URL of the backing database
@@ -179,11 +183,16 @@ class SqlAnalysisRepository(AnalysisRepository):
 
     def associated_report_ids(self, report_ids: Collection[UUID]) -> set[UUID]:
         with self._session_factory() as session:
+            # query in chunks, as each id is a bind variable and SQLite caps these per statement
             id_strings = [str(report_id) for report_id in report_ids]
-            rows = session.scalars(
-                select(_ReportAssociationEntity.report_id).where(_ReportAssociationEntity.report_id.in_(id_strings))
-            ).all()
-            return {UUID(row) for row in rows}
+            found: set[UUID] = set()
+            for start in range(0, len(id_strings), self._ID_QUERY_CHUNK_SIZE):
+                chunk = id_strings[start : start + self._ID_QUERY_CHUNK_SIZE]
+                rows = session.scalars(
+                    select(_ReportAssociationEntity.report_id).where(_ReportAssociationEntity.report_id.in_(chunk))
+                ).all()
+                found.update(UUID(row) for row in rows)
+            return found
 
     def member_report_ids(self, class_id: int, limit: int | None = None, newest_first: bool = True) -> list[tuple[UUID, datetime]]:
         with self._session_factory() as session:

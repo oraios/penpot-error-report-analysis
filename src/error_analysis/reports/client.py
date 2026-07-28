@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -112,6 +113,15 @@ class RpcReportProvider(ReportProvider):
     _PAGE_SIZE = 200
     """the maximum page size accepted by the listing endpoint"""
 
+    _RPC_ATTEMPTS = 3
+    """the maximum number of attempts per RPC call"""
+
+    _RETRY_BACKOFF_SECONDS = 0.5
+    """the backoff before the first retry; doubled for each further retry"""
+
+    _RETRYABLE_STATUS_CODES = frozenset({502, 503, 504})
+    """gateway-side HTTP error statuses considered transient"""
+
     def __init__(self, credentials: PenpotApiCredentials, timeout_seconds: float = 30.0, listing_concurrency: int = 8) -> None:
         """
         :param credentials: the connection parameters for the Penpot RPC API
@@ -193,30 +203,56 @@ class RpcReportProvider(ReportProvider):
 
     def _rpc(self, method: str, params: dict[str, Any]) -> Any:
         """
-        Performs a single RPC call.
+        Performs a single RPC call, retrying transient failures.
+
+        Transport-level failures (connection, TLS, timeout) and gateway-side error statuses are
+        retried with exponential backoff, as both RPC methods are pure reads; other failures are
+        raised immediately.
 
         :param method: the name of the RPC method
         :param params: the parameters to pass in the request body
         :return: the decoded JSON response
-        :raises ReportProviderError: if the request fails or the server responds with an error status
+        :raises ReportProviderError: if the request ultimately fails or the server responds with an
+            error status
         """
-        # perform the HTTP request
-        try:
-            response = self._http.post(method, json=params)
-        except httpx.HTTPError as e:
-            raise ReportProviderError(f"RPC call '{method}' failed: {e}") from e
+        last_failure = "no attempt performed"
+        cause: Exception | None = None
+        for attempt in range(1, self._RPC_ATTEMPTS + 1):
+            # back off before each retry
+            if attempt > 1:
+                time.sleep(self._RETRY_BACKOFF_SECONDS * 2 ** (attempt - 2))
 
-        # translate error responses into exceptions
-        if response.is_error:
+            # perform the HTTP request, treating transport failures as transient
             try:
-                error_data = response.json()
-            except ValueError:
-                error_data = {}
-            code = error_data.get("code", response.status_code)
-            message = error_data.get("message") or error_data.get("hint") or response.reason_phrase
-            raise ReportProviderError(f"RPC call '{method}' failed [{code}]: {message}")
+                response = self._http.post(method, json=params)
+            except httpx.TransportError as e:
+                last_failure, cause = str(e), e
+                log.warning("RPC call '%s' failed with transient error (attempt %d/%d): %s", method, attempt, self._RPC_ATTEMPTS, e)
+                continue
+            except httpx.HTTPError as e:
+                raise ReportProviderError(f"RPC call '{method}' failed: {e}") from e
 
-        return response.json()
+            # treat gateway-side error statuses as transient
+            if response.status_code in self._RETRYABLE_STATUS_CODES:
+                last_failure, cause = f"HTTP {response.status_code} {response.reason_phrase}", None
+                log.warning(
+                    "RPC call '%s' failed with transient error (attempt %d/%d): %s", method, attempt, self._RPC_ATTEMPTS, last_failure
+                )
+                continue
+
+            # translate remaining error responses into exceptions
+            if response.is_error:
+                try:
+                    error_data = response.json()
+                except ValueError:
+                    error_data = {}
+                code = error_data.get("code", response.status_code)
+                message = error_data.get("message") or error_data.get("hint") or response.reason_phrase
+                raise ReportProviderError(f"RPC call '{method}' failed [{code}]: {message}")
+
+            return response.json()
+
+        raise ReportProviderError(f"RPC call '{method}' failed after {self._RPC_ATTEMPTS} attempts: {last_failure}") from cause
 
     @classmethod
     def _parse_summary(cls, item: dict[str, Any]) -> ReportSummary:
