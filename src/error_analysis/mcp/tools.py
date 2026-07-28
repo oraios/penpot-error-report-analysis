@@ -25,19 +25,23 @@ class BootstrapAnalysisTool(Tool):
     Bootstraps an analysis session.
     """
 
-    def apply(self, num_classes: int = 3, days: int = 30) -> str:
+    def apply(self, num_classes: int = 3, days: int = 7, max_reports: int = 1000) -> str:
         """
-        Classifies all error reports of the recent past into equivalence classes and returns the most
+        Classifies the error reports of the recent past into equivalence classes and returns the most
         frequent classes that lack analysis insights, together with workflow instructions for analyzing them.
         This is the entry point of an analysis session; call it once and then follow the returned instructions.
+        To bound the call's duration, at most max_reports not-yet-classified reports are processed (newest
+        first); if this truncates the run, the result is marked accordingly, and completing the window via
+        the error-analysis-classify command line is advisable (afterwards, this tool is fast for any window).
 
         :param num_classes: the number of unanalyzed equivalence classes to return for analysis
         :param days: the number of past days whose reports are to be classified and counted
+        :param max_reports: the maximum number of not-yet-classified reports to classify during this call
         :return: a JSON object carrying the workflow instructions and the classes to analyze
         """
-        # associate all reports of the window with equivalence classes
+        # associate the window's reports with equivalence classes, bounded by the report limit
         since = datetime.now(UTC) - timedelta(days=days)
-        result = self._context.create_classifier().classify_window(since=since)
+        result = self._context.create_classifier().classify_window(since=since, max_new_reports=max_reports)
 
         # select the most frequent classes without insights
         overviews = self._context.repository.list_class_overviews(count_since=since)
@@ -51,14 +55,24 @@ class BootstrapAnalysisTool(Tool):
             entry["recent_member_ids"] = [str(report_id) for report_id, _ in members]
             classes.append(entry)
 
+        # describe the classification run, flagging truncation
+        classification_run: dict[str, object] = {
+            "window_days": days,
+            "reports_seen": result.reports_seen,
+            "reports_pending": result.reports_pending,
+            "reports_newly_classified": result.reports_classified,
+            "classes_newly_created": result.classes_created,
+            "truncated": result.truncated,
+        }
+        if result.truncated:
+            classification_run["note"] = (
+                "The report limit truncated classification, so report counts are lower bounds; "
+                "complete the window via the error-analysis-classify command line."
+            )
+
         return self._to_json(
             {
-                "classification_run": {
-                    "window_days": days,
-                    "reports_seen": result.reports_seen,
-                    "reports_newly_classified": result.reports_classified,
-                    "classes_newly_created": result.classes_created,
-                },
+                "classification_run": classification_run,
                 "instructions": _ANALYSIS_INSTRUCTIONS,
                 "classes": classes,
             }

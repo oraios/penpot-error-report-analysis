@@ -44,6 +44,16 @@ returns the most frequent unanalyzed classes together with workflow instructions
 should additionally have access to the Penpot development environment (code analysis tools) for
 root-cause investigation.
 
+### Classification backfills
+
+Reports are classified incrementally (each report's details are retrieved once). For large windows
+over high-volume deployments, perform the initial classification via the command line rather than
+through the MCP tool:
+
+    pixi run error-analysis-classify --days 30 [--concurrency 8]
+
+Subsequent `bootstrap_analysis` calls then only classify reports that arrived since.
+
 ### Web dashboard
 
     pixi run error-analysis-web

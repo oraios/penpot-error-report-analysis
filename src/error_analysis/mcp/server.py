@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
+import os
+import signal
+from types import FrameType
 from typing import Any
 
 import docstring_parser
@@ -14,6 +16,7 @@ from mcp.server.fastmcp.tools.base import Tool as FastMCPTool
 from mcp.types import ToolAnnotations
 
 from error_analysis.context import AnalysisContext
+from error_analysis.logging_config import configure_logging
 from error_analysis.mcp.tools import (
     BootstrapAnalysisTool,
     GetEquivalenceClassTool,
@@ -133,8 +136,26 @@ def main() -> None:
     args = parser.parse_args()
 
     # configure logging to stderr, keeping stdout free for the stdio MCP protocol
-    logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s %(levelname)-5s %(name)s: %(message)s")
+    configure_logging()
 
-    # create and run the server
+    # create and run the server, terminating hard on SIGINT/SIGTERM
+    _install_terminating_signal_handlers()
     server = McpServerFactory(AnalysisContext.create_default()).create_server(host=args.host, port=args.port)
     server.run(transport=args.transport)
+
+
+def _install_terminating_signal_handlers() -> None:
+    """
+    Installs SIGINT/SIGTERM handlers that terminate the process immediately.
+
+    The default graceful shutdown waits for open MCP sessions to drain, which long-lived client
+    connections never do, rendering the server unresponsive to Ctrl+C. Immediate termination is
+    safe here: all database transactions are short and SQLite (in WAL mode) is crash-consistent.
+    """
+
+    def terminate(signum: int, _frame: FrameType | None) -> None:
+        log.info("Received signal %d, terminating", signum)
+        os._exit(128 + signum)
+
+    signal.signal(signal.SIGINT, terminate)
+    signal.signal(signal.SIGTERM, terminate)

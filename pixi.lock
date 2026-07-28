@@ -175,7 +175,7 @@ packages:
 - pypi: ./
   name: error-analysis
   version: 0.1.0
-  sha256: 1f44c44794ab204be6caaf713870a260fc95b7ff366b57147e0787612260a8de
+  sha256: a8073e779db2cdda9edb4d36befd45ad25c1dd528a89cc3acd609de92d80773c
   requires_dist:
   - sqlalchemy>=2.0
   - flask>=3.0

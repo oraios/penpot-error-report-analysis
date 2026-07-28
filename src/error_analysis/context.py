@@ -42,8 +42,9 @@ class AnalysisContext:
             algorithm=FingerprintAlgorithmV1(),
         )
 
-    def create_classifier(self) -> ReportClassifier:
+    def create_classifier(self, fetch_concurrency: int = 8) -> ReportClassifier:
         """
+        :param fetch_concurrency: the number of report detail retrievals to perform concurrently
         :return: a classifier wired to the context's services
         """
-        return ReportClassifier(self.provider, self.algorithm, self.repository)
+        return ReportClassifier(self.provider, self.algorithm, self.repository, fetch_concurrency=fetch_concurrency)

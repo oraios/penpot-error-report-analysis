@@ -6,6 +6,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -100,6 +101,10 @@ class RpcReportProvider(ReportProvider):
     """
     A report provider backed by the Penpot RPC API.
 
+    Report listings are retrieved concurrently by splitting the requested time window into
+    disjoint shards that are paged in parallel (the listing endpoint's cursor pagination is
+    inherently sequential within a single stream).
+
     Instances hold an HTTP connection pool and should be closed after use; the class supports
     the context manager protocol.
     """
@@ -107,11 +112,14 @@ class RpcReportProvider(ReportProvider):
     _PAGE_SIZE = 200
     """the maximum page size accepted by the listing endpoint"""
 
-    def __init__(self, credentials: PenpotApiCredentials, timeout_seconds: float = 30.0) -> None:
+    def __init__(self, credentials: PenpotApiCredentials, timeout_seconds: float = 30.0, listing_concurrency: int = 8) -> None:
         """
         :param credentials: the connection parameters for the Penpot RPC API
         :param timeout_seconds: the timeout applied to each HTTP request
+        :param listing_concurrency: the number of time shards into which listings are split for
+            concurrent retrieval
         """
+        self._listing_concurrency = max(1, listing_concurrency)
         self._http = httpx.Client(
             base_url=f"{credentials.api_uri}/api/main/methods/",
             headers={
@@ -135,20 +143,49 @@ class RpcReportProvider(ReportProvider):
         self.close()
 
     def iter_summaries(self, since: datetime, until: datetime | None = None) -> Iterator[ReportSummary]:
-        # initialize the cursor from the window's oldest boundary
-        params: dict[str, Any] = {"limit": self._PAGE_SIZE, "since": self._format_instant(since)}
-        if until is not None:
-            params["until"] = self._format_instant(until)
+        # split the window into disjoint time shards
+        # (a shard's exclusive until boundary meets the next shard's since boundary exactly, as the
+        # server compares (created_at, id) tuples: until=t excludes instant t, since=t includes it)
+        effective_until = until if until is not None else datetime.now(UTC)
+        boundaries = self._shard_boundaries(since, effective_until, self._listing_concurrency)
 
-        # follow the pagination cursor until the server signals exhaustion
+        # page all shards concurrently and deliver their results in chronological order
+        with ThreadPoolExecutor(max_workers=len(boundaries) - 1, thread_name_prefix="summary-listing") as executor:
+            shards = executor.map(self._list_shard, boundaries[:-1], boundaries[1:])
+            for shard in shards:
+                yield from shard
+
+    def _list_shard(self, since: datetime, until: datetime) -> list[ReportSummary]:
+        """
+        Retrieves the summaries of a single time shard by sequentially following the pagination cursor.
+
+        :param since: the oldest boundary of the shard (exclusive)
+        :param until: the newest boundary of the shard (exclusive)
+        :return: the summaries of the shard, in ascending order of creation
+        """
+        params: dict[str, Any] = {"limit": self._PAGE_SIZE, "since": self._format_instant(since), "until": self._format_instant(until)}
+        summaries: list[ReportSummary] = []
         while True:
             result = self._rpc("get-error-reports", params)
-            for item in result["items"]:
-                yield self._parse_summary(item)
+            summaries.extend(self._parse_summary(item) for item in result["items"])
             if not (result.get("nextSince") and result.get("nextId")):
-                return
+                return summaries
             params["since"] = result["nextSince"]
             params["since-id"] = result["nextId"]
+
+    @staticmethod
+    def _shard_boundaries(since: datetime, until: datetime, shard_count: int) -> list[datetime]:
+        """
+        :param since: the oldest boundary of the window
+        :param until: the newest boundary of the window
+        :param shard_count: the desired number of shards
+        :return: the shard boundary instants (``shard_count + 1`` values from ``since`` to ``until``,
+            uniformly spaced; fewer for degenerate windows)
+        """
+        if until <= since:
+            return [since, until]
+        step = (until - since) / shard_count
+        return [since + i * step for i in range(shard_count)] + [until]
 
     def get_report(self, report_id: UUID) -> ErrorReport:
         data = self._rpc("get-error-report", {"id": str(report_id)})

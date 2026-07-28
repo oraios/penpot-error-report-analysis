@@ -81,7 +81,7 @@ class Tool(ABC):  # noqa: B024 (the apply method cannot be declared abstract, as
         :raises ToolCallError: if the tool application fails
         """
         # log the call
-        log.info("%s: %s", self.get_name(), kwargs)
+        log.info("Applying tool %s with arguments: %s", self.get_name(), kwargs)
 
         # apply the tool, translating failures into tool call errors
         try:
@@ -93,7 +93,7 @@ class Tool(ABC):  # noqa: B024 (the apply method cannot be declared abstract, as
             log.error(message, exc_info=e)
             raise ToolCallError(message) from e
 
-        log.info("%s completed (%d chars)", self.get_name(), len(result))
+        log.info("Tool %s completed (%d chars)", self.get_name(), len(result))
         return result
 
     def _get_apply_fn(self) -> _ApplyMethod:

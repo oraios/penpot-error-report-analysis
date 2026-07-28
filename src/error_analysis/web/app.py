@@ -10,6 +10,7 @@ from typing import Any
 from flask import Flask, Response, jsonify, request
 
 from error_analysis.context import AnalysisContext
+from error_analysis.logging_config import configure_logging
 from error_analysis.serialization import JsonSerializer
 
 log = logging.getLogger(__name__)
@@ -106,7 +107,7 @@ def main() -> None:
 
     The port is read from the ``ERROR_ANALYSIS_WEB_PORT`` environment variable (default 5100).
     """
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-5s %(name)s: %(message)s")
+    configure_logging()
     port = int(os.environ.get("ERROR_ANALYSIS_WEB_PORT", "5100"))
     backend = WebBackend(AnalysisContext.create_default())
     backend.flask_app.run(host="127.0.0.1", port=port)

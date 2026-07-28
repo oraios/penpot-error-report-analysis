@@ -99,6 +99,7 @@ class ReportClassifier:
   are expected to discriminate.
 * Logging uses the stdlib `logging` module with module-level loggers
   (`log = logging.getLogger(__name__)`); no `print` outside CLI entry points.
+* Log messages start with a capital letter.
 
 ## Repository Layout
 
