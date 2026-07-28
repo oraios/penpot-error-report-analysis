@@ -5,10 +5,29 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from error_analysis.mcp.tools_base import Tool, ToolCallError
+from error_analysis.persistence.records import ClassOverview
+from error_analysis.persistence.repository import AnalysisRepository
 from error_analysis.serialization import JsonSerializer
 
+
+def _unanalyzed_overviews(repository: AnalysisRepository, since: datetime) -> list[ClassOverview]:
+    """
+    :param repository: the repository to query
+    :param since: the window start that report counts refer to
+    :return: the overviews of all unanalyzed classes with reports in the window, ordered by report
+        count descending
+    """
+    return [o for o in repository.list_class_overviews(count_since=since) if o.insight_count == 0]
+
+
+_BOOTSTRAP_INSTRUCTIONS = """\
+Present the classes listed under 'top_unanalyzed_classes' to the user (rank, class id, hint, report count,
+last seen) and ask them to decide how many of these classes shall be analyzed (or which specific class ids,
+if they prefer to choose). Do not start any analysis yet. Once the user has decided, call
+get_analysis_candidates with their choice to receive the classes' details and the analysis instructions."""
+
 _ANALYSIS_INSTRUCTIONS = """\
-You are to analyze Penpot error report equivalence classes. For each class listed under 'classes' (in order):
+You are to analyze Penpot error report equivalence classes. For each class listed under 'candidates' (in order):
 1. Inspect the class's fingerprint signature (already included) to understand the error at a glance.
 2. Retrieve the details of a concrete member report via get_report_details, using the most recent member id
    from 'recent_member_ids'. Retrieve further members via get_equivalence_class if one instance is inconclusive.
@@ -25,35 +44,34 @@ class BootstrapAnalysisTool(Tool):
     Bootstraps an analysis session.
     """
 
-    def apply(self, num_classes: int = 3, days: int = 7, max_reports: int = 1000) -> str:
+    _TOP_CLASS_COUNT = 10
+    """the number of top unanalyzed classes presented for the user's decision"""
+
+    _QUICK_INFO_HINT_LENGTH = 160
+    """the maximum hint length in the quick class info"""
+
+    def apply(self, days: int = 7, max_reports: int = 1000) -> str:
         """
-        Classifies the error reports of the recent past into equivalence classes and returns the most
-        frequent classes that lack analysis insights, together with workflow instructions for analyzing them.
-        This is the entry point of an analysis session; call it once and then follow the returned instructions.
+        Classifies the error reports of the recent past into equivalence classes and returns an overview
+        of the analysis-worthy (i.e. not yet analyzed) classes, upon which the user is to decide what
+        shall be analyzed. This is the entry point of an analysis session; call it once and then follow
+        the returned instructions.
         To bound the call's duration, at most max_reports not-yet-classified reports are processed (newest
         first); if this truncates the run, the result is marked accordingly, and completing the window via
         the error-analysis-classify command line is advisable (afterwards, this tool is fast for any window).
 
-        :param num_classes: the number of unanalyzed equivalence classes to return for analysis
         :param days: the number of past days whose reports are to be classified and counted
         :param max_reports: the maximum number of not-yet-classified reports to classify during this call
-        :return: a JSON object carrying the workflow instructions and the classes to analyze
+        :return: a JSON object carrying the classification run's statistics, quick information on the top
+            unanalyzed classes, and instructions for the decision to request from the user
         """
         # associate the window's reports with equivalence classes, bounded by the report limit
         since = datetime.now(UTC) - timedelta(days=days)
         result = self._context.create_classifier().classify_window(since=since, max_new_reports=max_reports)
 
-        # select the most frequent classes without insights
-        overviews = self._context.repository.list_class_overviews(count_since=since)
-        unanalyzed = [o for o in overviews if o.insight_count == 0][:num_classes]
-
-        # attach recent member report ids to each selected class
-        classes = []
-        for overview in unanalyzed:
-            members = self._context.repository.member_report_ids(overview.equivalence_class.id, limit=5)
-            entry = JsonSerializer.class_overview(overview)
-            entry["recent_member_ids"] = [str(report_id) for report_id, _ in members]
-            classes.append(entry)
+        # assemble quick information on the top unanalyzed classes for the user's decision
+        unanalyzed = _unanalyzed_overviews(self._context.repository, since)
+        top_classes = [self._quick_info(rank, overview) for rank, overview in enumerate(unanalyzed[: self._TOP_CLASS_COUNT], start=1)]
 
         # describe the classification run, flagging truncation
         classification_run: dict[str, object] = {
@@ -73,10 +91,101 @@ class BootstrapAnalysisTool(Tool):
         return self._to_json(
             {
                 "classification_run": classification_run,
-                "instructions": _ANALYSIS_INSTRUCTIONS,
-                "classes": classes,
+                "unanalyzed_class_count": len(unanalyzed),
+                "top_unanalyzed_classes": top_classes,
+                "instructions": _BOOTSTRAP_INSTRUCTIONS,
             }
         )
+
+    @classmethod
+    def _quick_info(cls, rank: int, overview: ClassOverview) -> dict[str, object]:
+        """
+        :param rank: the class's rank by report count
+        :param overview: the class overview
+        :return: the condensed class information presented for the user's decision
+        """
+        record = overview.equivalence_class
+        hint = record.exemplar_hint
+        if len(hint) > cls._QUICK_INFO_HINT_LENGTH:
+            hint = hint[: cls._QUICK_INFO_HINT_LENGTH] + "…"
+        return {
+            "rank": rank,
+            "class_id": record.id,
+            "hint": hint,
+            "report_count": overview.report_count,
+            "last_seen_at": record.last_seen_at.isoformat(),
+        }
+
+
+class GetAnalysisCandidatesTool(Tool):
+    """
+    Retrieves the equivalence classes to be analyzed.
+    """
+
+    _MEMBER_ID_COUNT = 5
+    """the number of recent member report ids included per candidate"""
+
+    def apply(self, num_classes: int = 3, days: int = 7, class_ids: list[int] | None = None) -> str:
+        """
+        Retrieves the equivalence classes to be analyzed in full detail, together with the analysis
+        workflow instructions. Call this after the user has decided (based on the bootstrap_analysis
+        overview) what shall be analyzed: either the top num_classes unanalyzed classes, or, if the
+        user chose specific classes, exactly those given via class_ids.
+
+        :param num_classes: the number of top unanalyzed equivalence classes to retrieve; ignored if
+            class_ids is given
+        :param days: the number of past days that reports must fall into to be counted
+        :param class_ids: the ids of the specific equivalence classes chosen by the user, if any
+        :return: a JSON object carrying the analysis workflow instructions and the candidate classes
+            with their signatures and recent member report ids
+        """
+        # select the candidate classes per the user's decision
+        since = datetime.now(UTC) - timedelta(days=days)
+        if class_ids:
+            candidates = self._chosen_overviews(class_ids, since)
+        else:
+            candidates = _unanalyzed_overviews(self._context.repository, since)[:num_classes]
+
+        # attach signatures and recent member report ids
+        entries = []
+        for overview in candidates:
+            members = self._context.repository.member_report_ids(overview.equivalence_class.id, limit=self._MEMBER_ID_COUNT)
+            entry = JsonSerializer.class_overview(overview)
+            entry["recent_member_ids"] = [str(report_id) for report_id, _ in members]
+            entries.append(entry)
+
+        return self._to_json(
+            {
+                "instructions": _ANALYSIS_INSTRUCTIONS,
+                "candidates": entries,
+            }
+        )
+
+    def _chosen_overviews(self, class_ids: list[int], since: datetime) -> list[ClassOverview]:
+        """
+        Resolves explicitly chosen classes to overviews, honoring the user's choice regardless of
+        analysis state.
+
+        :param class_ids: the ids of the chosen equivalence classes
+        :param since: the window start that report counts refer to
+        :return: the overviews in the order chosen
+        :raises ToolCallError: if any of the given ids does not exist
+        """
+        # index the in-window overviews for count lookup
+        overviews_by_id = {o.equivalence_class.id: o for o in self._context.repository.list_class_overviews(count_since=since)}
+
+        # resolve each chosen class, falling back to a zero-count overview for classes without reports in the window
+        chosen = []
+        for class_id in class_ids:
+            if (overview := overviews_by_id.get(class_id)) is None:
+                record = self._context.repository.get_class(class_id)
+                if record is None:
+                    raise ToolCallError(f"No equivalence class with id {class_id} exists")
+                overview = ClassOverview(
+                    equivalence_class=record, report_count=0, insight_count=len(self._context.repository.list_insights(class_id))
+                )
+            chosen.append(overview)
+        return chosen
 
 
 class ListClassOverviewsTool(Tool):

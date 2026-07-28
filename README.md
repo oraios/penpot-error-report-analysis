@@ -38,9 +38,10 @@ For clients that connect via URL, run it with HTTP transport instead and registe
 
     pixi run error-analysis-mcp --transport streamable-http [--host 127.0.0.1] [--port 5101]
 
-An analysis session is started by calling the `bootstrap_analysis` tool (optionally specifying the
-number of classes to analyze and the time window in days); the tool classifies recent reports and
-returns the most frequent unanalyzed classes together with workflow instructions. The analyzing LLM
+An analysis session is started by calling the `bootstrap_analysis` tool: it classifies recent reports
+and returns an overview of the top unanalyzed classes, which the LLM presents to the user, who decides
+how many (or which) classes shall be analyzed. The chosen classes are then retrieved in full detail via
+`get_analysis_candidates`, which also delivers the analysis workflow instructions. The analyzing LLM
 should additionally have access to the Penpot development environment (code analysis tools) for
 root-cause investigation.
 
