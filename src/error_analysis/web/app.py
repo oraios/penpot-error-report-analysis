@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
-import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -103,11 +103,15 @@ class WebBackend:
 
 def main() -> None:
     """
-    Runs the web backend as a development server.
-
-    The port is read from the ``ERROR_ANALYSIS_WEB_PORT`` environment variable (default 5100).
+    Runs the web backend as a development server on the interface and port given on the command line.
     """
+    # parse the command line
+    parser = argparse.ArgumentParser(description="Runs the Penpot error report analysis dashboard.")
+    parser.add_argument("--host", default="127.0.0.1", help="the interface to bind to")
+    parser.add_argument("--port", type=int, default=5100, help="the port to listen on")
+    args = parser.parse_args()
+
+    # run the server
     configure_logging()
-    port = int(os.environ.get("ERROR_ANALYSIS_WEB_PORT", "5100"))
     backend = WebBackend(AnalysisContext.create_default())
-    backend.flask_app.run(host="127.0.0.1", port=port)
+    backend.flask_app.run(host=args.host, port=args.port)
