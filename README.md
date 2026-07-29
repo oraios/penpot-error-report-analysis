@@ -22,28 +22,38 @@ Requires [pixi](https://pixi.sh). Install the environment with:
 
     pixi install
 
-Configuration is read from the Penpot repository root `.env` file
+Configuration is read from environment variables or local `.env` file
 (`PENPOT_API_URI`, `PENPOT_ACCESS_TOKEN` with `error-reports:read` permission).
 
 ## Usage
 
 ### MCP server (LLM interface)
 
-For clients that spawn the server locally, register it with stdio transport:
-
-    pixi run --manifest-path /home/penpot/penpot/error-report-analysis/pyproject.toml error-analysis-mcp
-
-For clients that connect via URL, run it with HTTP transport instead and register the URL
-`http://127.0.0.1:5101/mcp`:
+Run the server with HTTP transport and register the corresponding URL (`http://127.0.0.1:5101/mcp`) 
+in your client:
 
     pixi run error-analysis-mcp --transport streamable-http [--host 127.0.0.1] [--port 5101]
 
-An analysis session is started by calling the `bootstrap_analysis` tool: it classifies recent reports
-and returns an overview of the top unanalyzed classes, which the LLM presents to the user, who decides
-how many (or which) classes shall be analyzed. The chosen classes are then retrieved in full detail via
-`get_analysis_candidates`, which also delivers the analysis workflow instructions. The analyzing LLM
-should additionally have access to the Penpot development environment (code analysis tools) for
-root-cause investigation.
+The server can alternatively be run with stdio transport:
+
+    pixi run --manifest-path /path/to/penpot-error-report-analysis/pyproject.toml error-analysis-mcp
+
+An analysis session is started by calling the `bootstrap_analysis` tool.
+Instruct the agent to call it, e.g. as follows:
+
+> *Start Penpot error analysis.*
+
+This classifies recent reports and returns an overview of the top unanalyzed classes, 
+which the LLM presents to the user, who decides how many (or which) classes shall be analyzed. 
+
+The chosen classes are then retrieved in full detail via `get_analysis_candidates`, 
+which also delivers the analysis workflow instructions. 
+
+> [!IMPORTANT]
+> The analyzing LLM should additionally have access to the 
+> [*agentic Penpot development environment*](https://help.penpot.app/technical-guide/developer/agentic-devenv/) 
+> for root-cause investigation.  
+> The git revision should ideally match the Penpot deployment that produced the reports.
 
 ### Classification backfills
 
