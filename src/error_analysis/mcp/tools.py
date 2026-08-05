@@ -50,15 +50,17 @@ class BootstrapAnalysisTool(Tool):
     _QUICK_INFO_HINT_LENGTH = 160
     """the maximum hint length in the quick class info"""
 
-    def apply(self, days: int = 7, max_reports: int = 1000) -> str:
+    def apply(self, days: int = 1, max_reports: int = 1000) -> str:
         """
         Classifies the error reports of the recent past into equivalence classes and returns an overview
         of the analysis-worthy (i.e. not yet analyzed) classes, upon which the user is to decide what
         shall be analyzed. This is the entry point of an analysis session; call it once and then follow
         the returned instructions.
-        To bound the call's duration, at most max_reports not-yet-classified reports are processed (newest
-        first); if this truncates the run, the result is marked accordingly, and completing the window via
-        the error-analysis-classify command line is advisable (afterwards, this tool is fast for any window).
+        To bound the call's duration, at most the max_reports most recent not-yet-classified reports are
+        processed; if this truncates the run, the result is marked accordingly and carries the coverage
+        boundary (the window is fully classified from its newest end down to that boundary), and completing
+        the window via the error-analysis-classify command line is advisable (afterwards, this tool is fast
+        for any window).
 
         :param days: the number of past days whose reports are to be classified and counted
         :param max_reports: the maximum number of not-yet-classified reports to classify during this call
@@ -83,9 +85,12 @@ class BootstrapAnalysisTool(Tool):
             "truncated": result.truncated,
         }
         if result.truncated:
+            classification_run["classified_down_to"] = result.classified_down_to.isoformat() if result.classified_down_to else None
             classification_run["note"] = (
-                "The report limit truncated classification, so report counts are lower bounds; "
-                "complete the window via the error-analysis-classify command line."
+                "The report limit truncated classification: the most recent reports were classified, so the "
+                "window is fully covered from its newest end down to 'classified_down_to'; reports older than "
+                "that boundary remain unclassified, making report counts lower bounds for the older part of "
+                "the window. Complete the window via the error-analysis-classify command line if needed."
             )
 
         return self._to_json(
@@ -125,7 +130,7 @@ class GetAnalysisCandidatesTool(Tool):
     _MEMBER_ID_COUNT = 5
     """the number of recent member report ids included per candidate"""
 
-    def apply(self, num_classes: int = 3, days: int = 7, class_ids: list[int] | None = None) -> str:
+    def apply(self, num_classes: int = 3, days: int = 1, class_ids: list[int] | None = None) -> str:
         """
         Retrieves the equivalence classes to be analyzed in full detail, together with the analysis
         workflow instructions. Call this after the user has decided (based on the bootstrap_analysis

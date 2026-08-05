@@ -26,6 +26,10 @@ class ClassificationResult:
     :ivar classes_created: the number of equivalence classes that were newly created
     :ivar truncated: whether classification was truncated by the report limit (leaving some of the
         window's reports unclassified)
+    :ivar classified_down_to: the coverage boundary of a truncated run: the creation time of the oldest
+        report classified in this run. Every report in the window newer than this boundary is classified;
+        older reports may remain unclassified. ``None`` if the run was not truncated (the whole window
+        is classified) or classified no reports.
     """
 
     reports_seen: int
@@ -33,6 +37,7 @@ class ClassificationResult:
     reports_classified: int
     classes_created: int
     truncated: bool
+    classified_down_to: datetime | None
 
 
 class ReportClassifier:
@@ -68,8 +73,8 @@ class ReportClassifier:
         :param since: the oldest boundary of the window (exclusive)
         :param until: the newest boundary of the window (exclusive); unbounded if ``None``
         :param max_new_reports: the maximum number of reports to classify, bounding the run's duration;
-            unbounded if ``None``. If the limit truncates the run, the newest reports are classified
-            and the result is marked as truncated.
+            unbounded if ``None``. If the limit truncates the run, the newest pending reports are
+            classified, and the result is marked as truncated and carries the coverage boundary.
         :return: the outcome of the run
         """
         # collect the report summaries within the window and drop already-classified reports
@@ -106,6 +111,7 @@ class ReportClassifier:
             reports_classified=len(to_classify),
             classes_created=classes_created,
             truncated=truncated,
+            classified_down_to=to_classify[-1].created_at if truncated and to_classify else None,
         )
 
     @classmethod

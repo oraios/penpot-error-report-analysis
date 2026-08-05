@@ -21,7 +21,7 @@ def main() -> None:
     """
     # parse the command line
     parser = argparse.ArgumentParser(description="Classifies the error reports of a past time window into equivalence classes.")
-    parser.add_argument("--days", type=float, default=30.0, help="the number of past days whose reports are to be classified")
+    parser.add_argument("--days", type=float, default=3.0, help="the number of past days whose reports are to be classified")
     parser.add_argument("--concurrency", type=int, default=8, help="the number of report detail retrievals to perform concurrently")
     args = parser.parse_args()
 
