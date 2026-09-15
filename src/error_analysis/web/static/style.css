@@ -161,6 +161,38 @@ pre.code-block {
 .insight-meta { font-size: 0.78rem; color: var(--muted); margin: 0.5rem 0 0; }
 .insight-meta a { color: inherit; }
 
+/* issue filing */
+
+.issue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line);
+}
+
+.issue-action-status { font-size: 0.78rem; flex: 1 1 100%; }
+
+.issue-tracker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.issue-tracker input {
+  font: inherit;
+  width: 7rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.issue-tracker a { color: var(--accent-done); font-weight: 600; }
+
 .insight-content h1, .insight-content h2, .insight-content h3 { font-size: 0.95rem; margin: 0.8rem 0 0.3rem; }
 .insight-content p, .insight-content ul { margin: 0.4rem 0; }
 .insight-content code { font-family: var(--mono); font-size: 0.82rem; background: var(--bg); padding: 0 0.2rem; }

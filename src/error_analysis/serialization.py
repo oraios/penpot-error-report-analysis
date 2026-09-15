@@ -30,6 +30,7 @@ class JsonSerializer:
             "exemplar_hint": record.exemplar_hint,
             "first_seen_at": record.first_seen_at.isoformat(),
             "last_seen_at": record.last_seen_at.isoformat(),
+            "issue_number": record.issue_number,
         }
 
     @classmethod

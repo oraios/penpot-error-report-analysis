@@ -25,6 +25,10 @@ class WebBackend:
     """
 
     _DEFAULT_WINDOW_DAYS = 30
+    """the time window applied when the client does not request a specific one"""
+
+    _ISSUE_MEMBER_COUNT = 5
+    """the number of member reports referenced in a GitHub issue draft"""
 
     def __init__(self, context: AnalysisContext) -> None:
         """
@@ -48,6 +52,8 @@ class WebBackend:
         self._app.add_url_rule("/", view_func=self._index)
         self._app.add_url_rule("/api/classes", view_func=self._list_classes)
         self._app.add_url_rule("/api/classes/<int:class_id>", view_func=self._get_class)
+        self._app.add_url_rule("/api/classes/<int:class_id>/issue", view_func=self._set_issue_number, methods=["PUT"])
+        self._app.add_url_rule("/api/classes/<int:class_id>/insights/<int:insight_id>/issue-draft", view_func=self._get_issue_draft)
         self._app.add_url_rule("/api/reports/<report_id>", view_func=self._get_report)
 
     def _index(self) -> Response:
@@ -87,6 +93,55 @@ class WebBackend:
                 "insights": [JsonSerializer.insight(i) for i in insights],
             }
         )
+
+    def _set_issue_number(self, class_id: int) -> Any:
+        """
+        Records the number of the GitHub issue filed for an equivalence class, as given by the
+        request body's ``issue_number`` entry (``null`` removing a previously recorded number).
+        """
+        # extract and validate the issue number
+        payload = request.get_json(silent=True) or {}
+        raw_number = payload.get("issue_number")
+        if raw_number is None:
+            issue_number = None
+        else:
+            try:
+                issue_number = int(raw_number)
+            except (TypeError, ValueError):
+                return jsonify({"error": "'issue_number' must be an integer or null"}), 400
+            if issue_number <= 0:
+                return jsonify({"error": "'issue_number' must be positive"}), 400
+
+        # record it
+        try:
+            record = self._context.repository.set_issue_number(class_id, issue_number)
+        except KeyError:
+            return jsonify({"error": f"no equivalence class with id {class_id}"}), 404
+        return jsonify(JsonSerializer.equivalence_class(record))
+
+    def _get_issue_draft(self, class_id: int, insight_id: int) -> Any:
+        """
+        Delivers the GitHub issue draft for an insight: title, body, and the URL of GitHub's issue
+        creation form with the content prefilled.
+        """
+        # resolve the class and the insight
+        record = self._context.repository.get_class(class_id)
+        if record is None:
+            return jsonify({"error": f"no equivalence class with id {class_id}"}), 404
+        insight = next((i for i in self._context.repository.list_insights(class_id) if i.id == insight_id), None)
+        if insight is None:
+            return jsonify({"error": f"no insight with id {insight_id} for class {class_id}"}), 404
+
+        # compose the draft from the class, the insight, and its member reports
+        overview = next((o for o in self._context.repository.list_class_overviews() if o.equivalence_class.id == class_id), None)
+        members = self._context.repository.member_report_ids(class_id, limit=self._ISSUE_MEMBER_COUNT)
+        draft = self._context.issue_draft_factory.create_draft(
+            equivalence_class=record,
+            insight=insight,
+            report_count=overview.report_count if overview is not None else 0,
+            member_report_ids=[report_id for report_id, _ in members],
+        )
+        return jsonify({"title": draft.title, "body": draft.body, "form_url": draft.form_url})
 
     def _get_report(self, report_id: str) -> Any:
         """

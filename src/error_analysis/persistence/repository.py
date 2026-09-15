@@ -90,6 +90,17 @@ class AnalysisRepository(ABC):
         """
 
     @abstractmethod
+    def set_issue_number(self, class_id: int, issue_number: int | None) -> EquivalenceClassRecord:
+        """
+        Records the number of the GitHub issue filed for the given equivalence class.
+
+        :param class_id: the identifier of the equivalence class
+        :param issue_number: the issue number; ``None`` to remove a previously recorded number
+        :return: the updated equivalence class
+        :raises KeyError: if no class with the given identifier exists
+        """
+
+    @abstractmethod
     def list_insights(self, class_id: int) -> list[InsightRecord]:
         """
         Retrieves the insights stored for the given equivalence class, oldest first.

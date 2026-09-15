@@ -36,6 +36,50 @@ class ApiClient {
     getReport(reportId) {
         return $.getJSON(`api/reports/${reportId}`);
     }
+
+    /**
+     * @param {number} classId the id of the equivalence class
+     * @param {number} insightId the id of the insight to file as an issue
+     * @returns {Promise<Object>} the issue draft (title, body, prefill_url, new_issue_url)
+     */
+    getIssueDraft(classId, insightId) {
+        return $.getJSON(`api/classes/${classId}/insights/${insightId}/issue-draft`);
+    }
+
+    /**
+     * @param {number} classId the id of the equivalence class
+     * @param {?number} issueNumber the number of the filed GitHub issue; null to remove it
+     * @returns {Promise<Object>} the updated equivalence class
+     */
+    setIssueNumber(classId, issueNumber) {
+        return $.ajax({
+            url: `api/classes/${classId}/issue`,
+            method: "PUT",
+            contentType: "application/json",
+            data: JSON.stringify({ issue_number: issueNumber }),
+            dataType: "json",
+        });
+    }
+}
+
+/** Copies text to the clipboard, falling back to a selection-based copy where unavailable. */
+class Clipboard {
+    /**
+     * @param {string} text the text to copy
+     * @returns {Promise<void>} resolved once the text has been copied
+     */
+    static copy(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise((resolve, reject) => {
+            const $area = $("<textarea>").val(text).css({ position: "fixed", opacity: 0 }).appendTo("body");
+            $area.get(0).select();
+            const succeeded = document.execCommand("copy");
+            $area.remove();
+            succeeded ? resolve() : reject(new Error("copy failed"));
+        });
+    }
 }
 
 /** Renders the table of equivalence classes and reports row selection. */
@@ -99,11 +143,15 @@ class ClassListView {
 class ClassDetailView {
     /**
      * @param {jQuery} $pane the pane to render into
+     * @param {ApiClient} api the client used to load issue drafts and record issue numbers
      * @param {function(string): void} onReportOpen invoked with the report id when a member is opened
+     * @param {function(): void} onClassChanged invoked when the displayed class was modified
      */
-    constructor($pane, onReportOpen) {
+    constructor($pane, api, onReportOpen, onClassChanged) {
         this._$pane = $pane;
+        this._api = api;
         this._onReportOpen = onReportOpen;
+        this._onClassChanged = onClassChanged;
     }
 
     /**
@@ -132,7 +180,42 @@ class ClassDetailView {
             .append($("<span>").attr("title", detail.digest).text(`digest ${detail.digest.substring(0, 12)}…`));
         return $("<div>").addClass("detail-header")
             .append($("<h2>").text(detail.exemplar_hint || "(no hint)"))
-            .append($meta);
+            .append($meta)
+            .append(this._buildIssueTracker(detail));
+    }
+
+    /**
+     * @param {Object} detail the class details
+     * @returns {jQuery} the control displaying or capturing the number of the filed GitHub issue
+     */
+    _buildIssueTracker(detail) {
+        const $tracker = $("<div>").addClass("issue-tracker");
+        if (detail.issue_number) {
+            const $link = $("<a>")
+                .attr("href", `https://github.com/penpot/penpot/issues/${detail.issue_number}`)
+                .attr("target", "_blank")
+                .attr("rel", "noopener")
+                .text(`Issue #${detail.issue_number}`);
+            const $remove = $("<button>").attr("type", "button").text("Unlink")
+                .on("click", () => this._storeIssueNumber(detail.id, null));
+            return $tracker.addClass("filed").append($("<span>").addClass("badge done").text("filed")).append($link).append($remove);
+        }
+        const $input = $("<input>").attr({ type: "number", min: "1", placeholder: "issue #" });
+        const $save = $("<button>").attr("type", "button").text("Link issue")
+            .on("click", () => {
+                const value = parseInt($input.val(), 10);
+                if (value > 0) this._storeIssueNumber(detail.id, value);
+            });
+        return $tracker.append($("<span>").addClass("muted").text("No issue linked")).append($input).append($save);
+    }
+
+    /**
+     * Records the given issue number for the given class and refreshes the display.
+     * @param {number} classId the id of the equivalence class
+     * @param {?number} issueNumber the issue number, or null to remove it
+     */
+    _storeIssueNumber(classId, issueNumber) {
+        this._api.setIssueNumber(classId, issueNumber).then(() => this._onClassChanged());
     }
 
     /**
@@ -167,7 +250,49 @@ class ClassDetailView {
             .append($reportLink);
         return $("<article>").addClass("insight")
             .append($("<div>").addClass("insight-content").html(marked.parse(insight.markdown)))
-            .append($meta);
+            .append($meta)
+            .append(this._buildIssueActions(insight));
+    }
+
+    /**
+     * @param {Object} insight the insight the actions pertain to
+     * @returns {jQuery} the actions for filing the insight as a GitHub issue
+     */
+    _buildIssueActions(insight) {
+        const $status = $("<span>").addClass("muted issue-action-status");
+        const $create = $("<button>").attr("type", "button").text("Create GitHub issue (title only)")
+            .on("click", () => this._openIssueForm(insight, $status));
+        const $copy = $("<button>").attr("type", "button").text("Copy issue body")
+            .on("click", () => this._copyIssueBody(insight, $status));
+        return $("<div>").addClass("issue-actions").append($create).append($copy).append($status);
+    }
+
+    /**
+     * Opens GitHub's issue form for the given insight with the title prefilled, the body having been
+     * copied to the clipboard for insertion into the form.
+     * @param {Object} insight the insight to file
+     * @param {jQuery} $status the element conveying the outcome
+     */
+    _openIssueForm(insight, $status) {
+        this._api.getIssueDraft(insight.class_id, insight.id)
+            .then((draft) => Clipboard.copy(draft.body).then(() => draft))
+            .then((draft) => {
+                window.open(draft.form_url, "_blank", "noopener");
+                $status.text("Issue form opened with the title filled in; paste the body (copied to the clipboard) and submit.");
+            })
+            .catch(() => $status.text("Preparing the issue failed."));
+    }
+
+    /**
+     * Copies the issue body of the given insight to the clipboard.
+     * @param {Object} insight the insight to copy the issue body of
+     * @param {jQuery} $status the element conveying the outcome
+     */
+    _copyIssueBody(insight, $status) {
+        this._api.getIssueDraft(insight.class_id, insight.id)
+            .then((draft) => Clipboard.copy(draft.body))
+            .then(() => $status.text("Issue body copied to the clipboard."))
+            .catch(() => $status.text("Copying failed."));
     }
 
     /**
@@ -302,8 +427,14 @@ class App {
         this._api = new ApiClient();
         this._overlay = new ReportOverlay($("#report-overlay"));
         this._listView = new ClassListView($("#class-rows"), $("#list-empty"), $("#class-count"), (classId) => this._selectClass(classId));
-        this._detailView = new ClassDetailView($("#detail-pane"), (reportId) => this._openReport(reportId));
+        this._detailView = new ClassDetailView(
+            $("#detail-pane"),
+            this._api,
+            (reportId) => this._openReport(reportId),
+            () => this._refreshSelectedClass()
+        );
         this._$windowDays = $("#window-days");
+        this._selectedClassId = null;
     }
 
     /** Starts the application. */
@@ -324,8 +455,16 @@ class App {
      * @param {number} classId the id of the selected class
      */
     _selectClass(classId) {
+        this._selectedClassId = classId;
         this._listView.markSelected(classId);
         this._api.getClass(classId).then((detail) => this._detailView.render(detail));
+    }
+
+    /** Reloads the currently selected class, reflecting modifications made to it. */
+    _refreshSelectedClass() {
+        if (this._selectedClassId !== null) {
+            this._selectClass(this._selectedClassId);
+        }
     }
 
     /**

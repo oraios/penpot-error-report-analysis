@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Collection
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, create_engine, event, func, select
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, create_engine, event, func, inspect, select, text
 from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.types import TypeDecorator
@@ -16,6 +17,8 @@ from sqlalchemy.types import TypeDecorator
 from error_analysis.fingerprint.algorithm import Fingerprint
 from error_analysis.persistence.records import ClassOverview, ClassResolution, EquivalenceClassRecord, InsightRecord
 from error_analysis.persistence.repository import AnalysisRepository
+
+log = logging.getLogger(__name__)
 
 
 class _UtcDateTime(TypeDecorator[datetime]):
@@ -56,6 +59,7 @@ class _EquivalenceClassEntity(_Base):
     exemplar_hint: Mapped[str] = mapped_column(Text)
     first_seen_at: Mapped[datetime] = mapped_column(_UtcDateTime)
     last_seen_at: Mapped[datetime] = mapped_column(_UtcDateTime)
+    issue_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     def to_record(self) -> EquivalenceClassRecord:
         return EquivalenceClassRecord(
@@ -66,6 +70,7 @@ class _EquivalenceClassEntity(_Base):
             exemplar_hint=self.exemplar_hint,
             first_seen_at=self.first_seen_at,
             last_seen_at=self.last_seen_at,
+            issue_number=self.issue_number,
         )
 
 
@@ -117,6 +122,25 @@ class SqlAnalysisRepository(AnalysisRepository):
         self._tune_sqlite(self._engine)
         self._session_factory = sessionmaker(self._engine, expire_on_commit=False)
         _Base.metadata.create_all(self._engine)
+        self._add_missing_columns()
+
+    def _add_missing_columns(self) -> None:
+        """
+        Adds columns that the schema defines but an existing database lacks.
+
+        Tables that already exist are left untouched by the schema creation, so databases created by
+        an earlier version of the schema are brought up to date here. Only nullable columns can be
+        added in this manner, which suffices for the columns introduced so far.
+        """
+        inspector = inspect(self._engine)
+        for table in _Base.metadata.sorted_tables:
+            existing_columns = {column["name"] for column in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name not in existing_columns:
+                    column_type = column.type.compile(self._engine.dialect)
+                    log.info("Adding missing column %s.%s to the database schema", table.name, column.name)
+                    with self._engine.begin() as connection:
+                        connection.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {column.name} {column_type}"))
 
     @staticmethod
     def _tune_sqlite(engine: Any) -> None:
@@ -234,6 +258,15 @@ class SqlAnalysisRepository(AnalysisRepository):
                 created_at=datetime.now(UTC),
             )
             session.add(entity)
+            session.flush()
+            return entity.to_record()
+
+    def set_issue_number(self, class_id: int, issue_number: int | None) -> EquivalenceClassRecord:
+        with self._session_factory.begin() as session:
+            entity = session.get(_EquivalenceClassEntity, class_id)
+            if entity is None:
+                raise KeyError(f"No equivalence class with id {class_id}")
+            entity.issue_number = issue_number
             session.flush()
             return entity.to_record()
 

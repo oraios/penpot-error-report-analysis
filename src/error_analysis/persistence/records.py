@@ -19,6 +19,7 @@ class EquivalenceClassRecord:
     :ivar exemplar_hint: the raw hint of one member report, cached for display purposes
     :ivar first_seen_at: the creation instant of the oldest associated report
     :ivar last_seen_at: the creation instant of the newest associated report
+    :ivar issue_number: the number of the GitHub issue filed for the class, if any
     """
 
     id: int
@@ -28,6 +29,7 @@ class EquivalenceClassRecord:
     exemplar_hint: str
     first_seen_at: datetime
     last_seen_at: datetime
+    issue_number: int | None = None
 
 
 @dataclass(frozen=True)
