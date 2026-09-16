@@ -79,7 +79,7 @@ class IssueDraftFactory:
         title = " ".join(equivalence_class.exemplar_hint.split())
         if len(title) > cls._MAX_TITLE_LENGTH:
             title = title[: cls._MAX_TITLE_LENGTH - 1].rstrip() + "…"
-        return title or f"Error report class #{equivalence_class.id}"
+        return title or f"Error report class {equivalence_class.id}"
 
     @classmethod
     def _create_metadata_section(
@@ -102,7 +102,7 @@ class IssueDraftFactory:
             "",
             "### Error report data",
             "",
-            f"* Equivalence class: #{equivalence_class.id} (fingerprint "
+            f"* Equivalence class: {equivalence_class.id} (fingerprint "
             f"`{equivalence_class.digest[: cls._DIGEST_PREFIX_LENGTH]}`, algorithm v{equivalence_class.algorithm_version})",
             f"* Occurrences: {report_count} reports, "
             f"{cls._format_instant(equivalence_class.first_seen_at)} to {cls._format_instant(equivalence_class.last_seen_at)}",
