@@ -36,7 +36,9 @@ You are to analyze Penpot error report equivalence classes. For each class liste
 4. Write a markdown report with the sections: Summary, Root Cause, Evidence, Affected Code,
    Suggested Fix, Severity. If the analysis remains inconclusive, report your findings and open questions instead.
 5. Store the report via store_insight (passing the id of the report instance you analyzed and your model name as author).
-Then continue with the next class. Do not skip storing an insight for an analyzed class."""
+Then continue with the next class. Do not skip storing an insight for an analyzed class.
+Filing GitHub issues is not part of this workflow; should the user explicitly ask for it (and a candidate's
+'issue_number' be absent, i.e. no issue filed yet), record the number of the issue you filed via set_issue_number."""
 
 
 class BootstrapAnalysisTool(Tool):
@@ -258,6 +260,33 @@ class GetReportDetailsTool(Tool):
         """
         report = self._context.provider.get_report(self._parse_uuid(report_id))
         return self._to_json(JsonSerializer.report(report))
+
+
+class SetIssueNumberTool(Tool):
+    """
+    Records the GitHub issue filed for an equivalence class.
+    """
+
+    def apply(self, class_id: int, issue_number: int) -> str:
+        """
+        Records the number of the GitHub issue that was filed for an equivalence class, such that the
+        issue is linked in the dashboard and the class is recognizable as filed. Call this only for an
+        issue that actually exists, i.e. after having filed it or when the user provides its number.
+
+        :param class_id: the id of the equivalence class the issue pertains to
+        :param issue_number: the number of the GitHub issue
+        :return: a JSON object describing the updated equivalence class
+        """
+        # validate the issue number
+        if issue_number <= 0:
+            raise ToolCallError(f"Invalid issue number {issue_number}: must be positive")
+
+        # record it
+        try:
+            record = self._context.repository.set_issue_number(class_id, issue_number)
+        except KeyError as e:
+            raise ToolCallError(f"No equivalence class with id {class_id} exists") from e
+        return self._to_json(JsonSerializer.equivalence_class(record))
 
 
 class StoreInsightTool(Tool):

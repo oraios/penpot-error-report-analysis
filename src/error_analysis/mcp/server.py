@@ -23,6 +23,7 @@ from error_analysis.mcp.tools import (
     GetEquivalenceClassTool,
     GetReportDetailsTool,
     ListClassOverviewsTool,
+    SetIssueNumberTool,
     StoreInsightTool,
 )
 from error_analysis.mcp.tools_base import Tool, ToolCallError
@@ -43,6 +44,7 @@ _TOOL_CLASSES: list[type[Tool]] = [
     GetEquivalenceClassTool,
     GetReportDetailsTool,
     StoreInsightTool,
+    SetIssueNumberTool,
 ]
 
 
